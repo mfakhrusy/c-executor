@@ -1,0 +1,33 @@
+[Unit]
+Description=C Code Executor API (Firejail Sandbox)
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+WorkingDirectory=/var/www/c-executor
+ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
+Restart=always
+RestartSec=5
+
+# Environment (restrict CORS in production)
+# Environment=ALLOWED_ORIGINS=https://blog.your.domain,https://c-playground.your.domain
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/tmp
+
+# Allow firejail to work
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SETUID CAP_SETGID
+AmbientCapabilities=
+
+# Resource limits for the server itself
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

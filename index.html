@@ -3,38 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>C Compiler (Godbolt API)</title>
+    <title>C Playground</title>
     <style>
+      * { box-sizing: border-box; }
       body {
         font-family: system-ui, -apple-system, sans-serif;
         max-width: 900px;
-        margin: 2rem auto;
-        padding: 0 1rem;
+        margin: 0 auto;
+        padding: 1rem;
         background: #1a1a2e;
         color: #eee;
       }
-      h1 { color: #00d9ff; }
-      #status { color: #ffd93d; }
-      .success { color: #00ff88 !important; }
-      .error { color: #ff6b6b !important; }
-      pre {
-        background: #0f0f1a;
-        padding: 1rem;
-        border-radius: 8px;
-        overflow-x: auto;
-        white-space: pre-wrap;
+      h1 { 
+        color: #00d9ff; 
+        margin-bottom: 0.5rem;
+      }
+      .subtitle {
+        color: #888;
+        margin-bottom: 1.5rem;
+      }
+      .editor-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
       }
       textarea {
         width: 100%;
-        min-height: 200px;
+        height: 300px;
         background: #0f0f1a;
         color: #00ff88;
         border: 1px solid #333;
         border-radius: 8px;
         padding: 1rem;
-        font-family: monospace;
+        font-family: 'Consolas', 'Monaco', monospace;
         font-size: 14px;
+        line-height: 1.5;
         resize: vertical;
+      }
+      textarea:focus {
+        outline: none;
+        border-color: #00d9ff;
+      }
+      .controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
       }
       button {
         background: #00d9ff;
@@ -42,41 +55,63 @@
         border: none;
         padding: 0.75rem 1.5rem;
         border-radius: 8px;
-        font-size: 16px;
+        cursor: pointer;
         font-weight: bold;
-        cursor: pointer;
-        margin-top: 1rem;
-      }
-      button:hover { background: #00b8d4; }
-      button:disabled { background: #555; cursor: not-allowed; }
-      .output-section { margin-top: 1.5rem; }
-      .tabs {
+        font-size: 14px;
         display: flex;
+        align-items: center;
         gap: 0.5rem;
-        margin-bottom: 0.5rem;
       }
-      .tab {
+      button:hover { background: #00b8d9; }
+      button:disabled { 
+        background: #444; 
+        cursor: not-allowed; 
+        color: #888;
+      }
+      .status {
+        color: #ffd93d;
+        font-size: 14px;
+      }
+      .status.success { color: #00ff88; }
+      .status.error { color: #ff6b6b; }
+      .output-container {
+        background: #0f0f1a;
+        border: 1px solid #333;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .output-header {
+        background: #252540;
         padding: 0.5rem 1rem;
-        background: #333;
-        border: none;
-        color: #eee;
-        cursor: pointer;
-        border-radius: 4px 4px 0 0;
+        font-size: 12px;
+        color: #888;
+        border-bottom: 1px solid #333;
       }
-      .tab.active { background: #0f0f1a; }
-      #asm-output, #execution-output { color: #ccc; }
+      .output {
+        padding: 1rem;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 14px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        min-height: 100px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .output.stdout { color: #eee; }
+      .output.stderr { color: #ff6b6b; }
     </style>
   </head>
   <body>
-    <h1>🔧 C Compiler (Godbolt API)</h1>
-    <p>Compile C code in the browser using <a href="https://godbolt.org" style="color:#00d9ff">Compiler Explorer</a> API</p>
-    
-    <h3>Source Code:</h3>
-    <textarea id="source">#include &lt;stdio.h&gt;
+    <h1>C Playground</h1>
+    <p class="subtitle">Write and run C code in your browser</p>
+
+    <div class="editor-container">
+      <textarea id="code">#include &lt;stdio.h&gt;
 
 int main() {
-    printf("Hello World from Godbolt!\n");
+    printf("Hello, World!\n");
     
+    // Try some math
     int sum = 0;
     for (int i = 1; i <= 10; i++) {
         sum += i;
@@ -86,173 +121,78 @@ int main() {
     return 0;
 }</textarea>
 
-    <button id="compile-btn" onclick="compile()">▶ Compile & Run</button>
-    <button onclick="compileOnly()" style="background:#555;color:#eee">Assembly Only</button>
-    
-    <h2 id="status"></h2>
-
-    <div class="output-section">
-      <div class="tabs">
-        <button class="tab active" onclick="showTab('execution')">Execution Output</button>
-        <button class="tab" onclick="showTab('asm')">Assembly</button>
+      <div class="controls">
+        <button id="run" onclick="runCode()">
+          <span>▶</span> Run Code
+        </button>
+        <span id="status" class="status"></span>
       </div>
-      <pre id="execution-output" style="display:block"></pre>
-      <pre id="asm-output" style="display:none"></pre>
+
+      <div class="output-container">
+        <div class="output-header">Output</div>
+        <pre id="output" class="output stdout"></pre>
+      </div>
     </div>
 
     <script>
-      const GODBOLT_API = 'https://godbolt.org/api';
-      const COMPILER = 'cclang1810'; // Clang 18.1.0
+      // API endpoint - auto-detect local vs production
+      const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://127.0.0.1:3001/execute'  // Local development
+        : '/api/execute';                   // Production (via Caddy)
 
-      function showTab(tab) {
-        document.querySelectorAll('.tab').forEach((t, i) => {
-          t.classList.toggle('active', (tab === 'execution' && i === 0) || (tab === 'asm' && i === 1));
-        });
-        document.getElementById('execution-output').style.display = tab === 'execution' ? 'block' : 'none';
-        document.getElementById('asm-output').style.display = tab === 'asm' ? 'block' : 'none';
-      }
-
-      async function compile() {
+      async function runCode() {
+        const code = document.getElementById('code').value;
         const status = document.getElementById('status');
-        const execOutput = document.getElementById('execution-output');
-        const asmOutput = document.getElementById('asm-output');
-        const btn = document.getElementById('compile-btn');
-        const source = document.getElementById('source').value;
+        const output = document.getElementById('output');
+        const runBtn = document.getElementById('run');
 
-        btn.disabled = true;
+        runBtn.disabled = true;
+        status.className = 'status';
         status.textContent = 'Compiling...';
-        status.className = '';
-        execOutput.textContent = '';
-        asmOutput.textContent = '';
+        output.textContent = '';
+        output.className = 'output stdout';
 
         try {
-          const response = await fetch(`${GODBOLT_API}/compiler/${COMPILER}/compile`, {
+          const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-              source: source,
-              options: {
-                userArguments: '-O2 -Wall',
-                filters: {
-                  binary: false,
-                  execute: true,
-                  demangle: true,
-                  labels: true,
-                  directives: true,
-                  commentOnly: true,
-                  trim: true,
-                  intel: true
-                },
-                compilerOptions: {
-                  executorRequest: true
-                }
-              }
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-
           const result = await response.json();
-          
-          // Display assembly
-          const asmLines = result.asm?.map(a => a.text).join('\n') || '';
-          asmOutput.textContent = asmLines || '(No assembly output)';
 
-          // Check for compilation errors
-          if (result.code !== 0 && !result.execResult) {
-            const stderr = result.stderr?.map(s => s.text).join('\n') || 'Compilation failed';
-            status.textContent = '✗ Compilation Error';
-            status.className = 'error';
-            execOutput.textContent = stderr;
-            return;
-          }
-
-          // Display execution output
-          if (result.execResult) {
-            const stdout = result.execResult.stdout?.map(s => s.text).join('\n') || '';
-            const stderr = result.execResult.stderr?.map(s => s.text).join('\n') || '';
-            const exitCode = result.execResult.code;
-            
-            execOutput.textContent = stdout || '(No output)';
-            if (stderr) {
-              execOutput.textContent += '\n\n--- stderr ---\n' + stderr;
-            }
-            execOutput.textContent += `\n\n[Exit code: ${exitCode}]`;
-            
-            status.textContent = exitCode === 0 ? '✓ Success!' : `✗ Exit code: ${exitCode}`;
-            status.className = exitCode === 0 ? 'success' : 'error';
+          if (result.error) {
+            status.className = 'status error';
+            status.textContent = '✗ Error';
+            output.className = 'output stderr';
+            output.textContent = result.error;
+          } else if (result.success) {
+            status.className = 'status success';
+            status.textContent = `✓ Success (exit code: ${result.exit_code})`;
+            output.textContent = result.stdout || '(no output)';
           } else {
-            status.textContent = '✓ Compiled (no execution)';
-            status.className = 'success';
-            execOutput.textContent = '(Execution not available for this code)';
+            status.className = 'status error';
+            status.textContent = `✗ ${result.stage === 'compile' ? 'Compilation' : 'Runtime'} Error`;
+            output.className = 'output stderr';
+            output.textContent = result.stderr || result.stdout || '(no output)';
           }
-
         } catch (err) {
-          status.textContent = '✗ Error: ' + err.message;
-          status.className = 'error';
-          execOutput.textContent = err.stack || err.message;
+          status.className = 'status error';
+          status.textContent = '✗ Connection Error';
+          output.className = 'output stderr';
+          output.textContent = err.message;
         } finally {
-          btn.disabled = false;
+          runBtn.disabled = false;
         }
       }
 
-      async function compileOnly() {
-        const status = document.getElementById('status');
-        const asmOutput = document.getElementById('asm-output');
-        const source = document.getElementById('source').value;
-
-        status.textContent = 'Compiling...';
-        status.className = '';
-        showTab('asm');
-
-        try {
-          const response = await fetch(`${GODBOLT_API}/compiler/${COMPILER}/compile`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-              source: source,
-              options: {
-                userArguments: '-O2',
-                filters: {
-                  binary: false,
-                  execute: false,
-                  demangle: true,
-                  labels: true,
-                  directives: true,
-                  commentOnly: true,
-                  trim: true,
-                  intel: true
-                }
-              }
-            })
-          });
-
-          const result = await response.json();
-          const asmLines = result.asm?.map(a => a.text).join('\n') || '';
-          asmOutput.textContent = asmLines || '(No assembly output)';
-
-          if (result.code !== 0) {
-            const stderr = result.stderr?.map(s => s.text).join('\n') || '';
-            status.textContent = '✗ Compilation Error';
-            status.className = 'error';
-            asmOutput.textContent = stderr + '\n\n' + asmLines;
-          } else {
-            status.textContent = '✓ Compiled!';
-            status.className = 'success';
-          }
-        } catch (err) {
-          status.textContent = '✗ Error: ' + err.message;
-          status.className = 'error';
+      // Ctrl+Enter to run
+      document.getElementById('code').addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+          e.preventDefault();
+          runCode();
         }
-      }
+      });
     </script>
   </body>
 </html>
