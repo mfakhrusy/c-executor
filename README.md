@@ -2,6 +2,9 @@
 
 A sandboxed C code execution API using Python + gcc + firejail.
 
+<img width="893" height="670" alt="image" src="https://github.com/user-attachments/assets/7d57c8d1-90b0-46fe-94d8-8fe1962f04e8" />
+
+
 ## Features
 
 - **Firejail sandbox** - Both compilation and execution run in isolated environments
