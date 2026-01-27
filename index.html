@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wasmer Clang Test</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        background: #1a1a2e;
+        color: #eee;
+      }
+      h1 { color: #00d9ff; }
+      #status { color: #ffd93d; }
+      pre {
+        background: #0f0f1a;
+        padding: 1rem;
+        border-radius: 8px;
+        overflow-x: auto;
+      }
+      code { color: #00ff88; }
+    </style>
+  </head>
+  <body>
+    <h1>Wasmer Clang Test</h1>
+    <h2 id="status">Loading...</h2>
+    <h3>Output:</h3>
+    <pre><code id="stdout"></code></pre>
+
+    <h3>Source Code:</h3>
+    <pre><code id="source">#include&lt;stdio.h&gt;
+
+int main() {
+    printf("Hello World from Wasmer!");
+    return 0;
+}</code></pre>
+
+    <script type="module">
+      import {
+        init,
+        Wasmer,
+        Directory
+      } from "https://unpkg.com/@wasmer/sdk@0.8.0/dist/index.mjs";
+
+      async function runClang() {
+        const status = document.getElementById("status");
+        const stdout = document.getElementById("stdout");
+
+        try {
+          status.textContent = "Initializing Wasmer SDK...";
+          await init();
+
+          status.textContent = "Fetching clang from registry...";
+          const clang = await Wasmer.fromRegistry("clang/clang");
+          
+          const project = new Directory();
+          await project.writeFile("example.c",
+`#include<stdio.h>
+
+int main() {
+    printf("Hello World from Wasmer!");
+    return 0;
+}
+`);
+
+          status.textContent = "Compiling C to WebAssembly...";
+          let instance = await clang.entrypoint.run({
+            args: ["/project/example.c", "-o", "/project/example.wasm"],
+            mount: { "/project": project },
+          });
+          const output = await instance.wait();
+
+          if (!output.ok) {
+            throw new Error(`Clang failed: ${output.stderr}`);
+          }
+
+          status.textContent = "Running compiled WebAssembly...";
+          let wasm = await project.readFile("example.wasm");
+          const example = await Wasmer.fromFile(wasm);
+          const result = await example.entrypoint.run();
+          const outputExample = await result.wait();
+
+          status.textContent = "✓ Complete!";
+          stdout.textContent = outputExample.stdout;
+        } catch (err) {
+          status.textContent = "✗ Error: " + err.message;
+          console.error(err);
+        }
+      }
+
+      runClang();
+    </script>
+  </body>
+</html>
