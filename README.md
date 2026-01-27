@@ -34,6 +34,12 @@ python3 server.py
 
 Server runs on `http://127.0.0.1:3001`
 
+# Run the client for local testing
+
+python3 -m http.server
+
+Visit `http://127.0.0.1:8000` in the browser
+
 ## Production Deployment
 
 See [INSTALL.md](INSTALL.md) for step-by-step instructions.
