@@ -39,7 +39,11 @@ Server runs on `http://127.0.0.1:3001`
 
 # Run the client for local testing
 
+On a different terminal tab:
+
+```
 python3 -m http.server
+```
 
 Visit `http://127.0.0.1:8000` in the browser
 
