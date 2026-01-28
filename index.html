@@ -319,6 +319,13 @@ int main() {
         }
       });
 
+      // Load code from URL query parameter if present
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeParam = urlParams.get('code');
+      if (codeParam) {
+        editor.setValue(codeParam);
+      }
+
       // API endpoint - auto-detect local vs production
       const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://127.0.0.1:3001/execute'
