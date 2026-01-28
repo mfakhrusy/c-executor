@@ -4,109 +4,257 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>C Playground</title>
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
     <style>
       * { box-sizing: border-box; }
       body {
         font-family: system-ui, -apple-system, sans-serif;
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 1rem;
+        margin: 0;
+        padding: 0;
         background: #1a1a2e;
         color: #eee;
+        min-height: 100vh;
       }
-      h1 { 
-        color: #00d9ff; 
-        margin-bottom: 0.5rem;
+      .container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+        gap: 0;
       }
-      .subtitle {
-        color: #888;
-        margin-bottom: 1.5rem;
-      }
-      .editor-container {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-      textarea {
-        width: 100%;
-        height: 300px;
-        background: #0f0f1a;
-        color: #00ff88;
-        border: 1px solid #333;
-        border-radius: 8px;
-        padding: 1rem;
-        font-family: 'Consolas', 'Monaco', monospace;
-        font-size: 14px;
-        line-height: 1.5;
-        resize: vertical;
-      }
-      textarea:focus {
-        outline: none;
-        border-color: #00d9ff;
-      }
-      .controls {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-      }
-      button {
-        background: #00d9ff;
-        color: #1a1a2e;
-        border: none;
+      .header {
+        grid-column: 1 / -1;
+        background: #252540;
         padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #333;
+      }
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .logo {
+        font-size: 1.25rem;
         font-weight: bold;
-        font-size: 14px;
+        color: #00d9ff;
         display: flex;
         align-items: center;
         gap: 0.5rem;
       }
-      button:hover { background: #00b8d9; }
-      button:disabled { 
-        background: #444; 
-        cursor: not-allowed; 
-        color: #888;
-      }
-      .status {
-        color: #ffd93d;
+      .logo-icon {
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, #00d9ff, #00ff88);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 14px;
+        color: #1a1a2e;
+        font-weight: bold;
       }
-      .status.success { color: #00ff88; }
-      .status.error { color: #ff6b6b; }
-      .output-container {
-        background: #0f0f1a;
+      .file-tab {
+        background: #1a1a2e;
+        padding: 0.5rem 1rem;
+        border-radius: 6px 6px 0 0;
+        font-size: 13px;
+        color: #aaa;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         border: 1px solid #333;
-        border-radius: 8px;
+        border-bottom: none;
+        margin-bottom: -1px;
+      }
+      .file-tab .dot {
+        width: 8px;
+        height: 8px;
+        background: #00ff88;
+        border-radius: 50%;
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
       }
-      .output-header {
+      .panel-header {
         background: #252540;
         padding: 0.5rem 1rem;
         font-size: 12px;
+        font-weight: 600;
         color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
         border-bottom: 1px solid #333;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
       }
-      .output {
+      .panel-header-actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .icon-btn {
+        background: transparent;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        transition: all 0.2s;
+      }
+      .icon-btn:hover {
+        background: #333;
+        color: #fff;
+      }
+      .icon-btn.copied {
+        color: #00ff88;
+      }
+      .editor-panel {
+        border-right: 1px solid #333;
+      }
+      .editor-wrapper {
+        flex: 1;
+        overflow: hidden;
+        position: relative;
+      }
+      .CodeMirror {
+        height: 100%;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .CodeMirror-gutters {
+        background: #1a1a2e;
+        border-right: 1px solid #333;
+      }
+      .CodeMirror-linenumber {
+        color: #555;
+        padding: 0 8px;
+      }
+      .controls {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: #1e1e32;
+        border-top: 1px solid #333;
+      }
+      .run-btn {
+        background: linear-gradient(135deg, #00d9ff, #00b8d9);
+        color: #1a1a2e;
+        border: none;
+        padding: 0.6rem 1.25rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(0, 217, 255, 0.3);
+      }
+      .run-btn:hover { 
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 217, 255, 0.4);
+      }
+      .run-btn:disabled { 
+        background: #444; 
+        cursor: not-allowed; 
+        color: #888;
+        box-shadow: none;
+        transform: none;
+      }
+      .status {
+        font-size: 13px;
+        color: #888;
+      }
+      .status.success { color: #00ff88; }
+      .status.error { color: #ff6b6b; }
+      .status.running { color: #ffd93d; }
+      .output-content {
+        flex: 1;
         padding: 1rem;
-        font-family: 'Consolas', 'Monaco', monospace;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
         font-size: 14px;
         white-space: pre-wrap;
         word-break: break-all;
-        min-height: 100px;
-        max-height: 300px;
         overflow-y: auto;
+        background: #0f0f1a;
+        line-height: 1.6;
       }
-      .output.stdout { color: #eee; }
-      .output.stderr { color: #ff6b6b; }
+      .output-content.stdout { color: #eee; }
+      .output-content.stderr { color: #ff6b6b; }
+      .output-content.empty {
+        color: #555;
+        font-style: italic;
+      }
+      .shortcut-hint {
+        font-size: 11px;
+        color: #555;
+        margin-left: auto;
+      }
+      .shortcut-hint kbd {
+        background: #333;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: inherit;
+        border: 1px solid #444;
+      }
+
+      /* Responsive */
+      @media (max-width: 768px) {
+        .container {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 1fr 1fr;
+        }
+        .editor-panel {
+          border-right: none;
+          border-bottom: 1px solid #333;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1>C Playground</h1>
-    <p class="subtitle">Write and run C code in your browser</p>
+    <div class="container">
+      <header class="header">
+        <div class="header-left">
+          <div class="logo">
+            <div class="logo-icon">C</div>
+            <span>Playground</span>
+          </div>
+          <div class="file-tab">
+            <span class="dot"></span>
+            main.c
+          </div>
+        </div>
+      </header>
 
-    <div class="editor-container">
-      <textarea id="code">#include &lt;stdio.h&gt;
+      <div class="panel editor-panel">
+        <div class="panel-header">
+          <span>Editor</span>
+          <div class="panel-header-actions">
+            <button class="icon-btn" onclick="copyCode()" id="copyBtn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span id="copyText">Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="editor-wrapper">
+          <textarea id="code">#include &lt;stdio.h&gt;
 
 int main() {
     printf("Hello, World!\n");
@@ -120,37 +268,73 @@ int main() {
     
     return 0;
 }</textarea>
-
-      <div class="controls">
-        <button id="run" onclick="runCode()">
-          <span>▶</span> Run Code
-        </button>
-        <span id="status" class="status"></span>
+        </div>
+        <div class="controls">
+          <button class="run-btn" id="run" onclick="runCode()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Run
+          </button>
+          <span id="status" class="status"></span>
+          <span class="shortcut-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
+        </div>
       </div>
 
-      <div class="output-container">
-        <div class="output-header">Output</div>
-        <pre id="output" class="output stdout"></pre>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Output</span>
+          <div class="panel-header-actions">
+            <button class="icon-btn" onclick="clearOutput()" title="Clear output">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Clear
+            </button>
+          </div>
+        </div>
+        <pre id="output" class="output-content empty">Run your code to see output here...</pre>
       </div>
     </div>
 
+    <!-- CodeMirror JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
     <script>
+      // Initialize CodeMirror
+      const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
+        mode: 'text/x-csrc',
+        theme: 'material-darker',
+        lineNumbers: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: false,
+        lineWrapping: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        extraKeys: {
+          'Ctrl-Enter': runCode,
+          'Cmd-Enter': runCode
+        }
+      });
+
       // API endpoint - auto-detect local vs production
       const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://127.0.0.1:3001/execute'  // Local development
-        : '/api/execute';                   // Production (via Caddy)
+        ? 'http://127.0.0.1:3001/execute'
+        : '/api/execute';
 
       async function runCode() {
-        const code = document.getElementById('code').value;
+        const code = editor.getValue();
         const status = document.getElementById('status');
         const output = document.getElementById('output');
         const runBtn = document.getElementById('run');
 
         runBtn.disabled = true;
-        status.className = 'status';
-        status.textContent = 'Compiling...';
+        status.className = 'status running';
+        status.textContent = '● Compiling...';
         output.textContent = '';
-        output.className = 'output stdout';
+        output.className = 'output-content stdout';
 
         try {
           const response = await fetch(API_URL, {
@@ -164,35 +348,50 @@ int main() {
           if (result.error) {
             status.className = 'status error';
             status.textContent = '✗ Error';
-            output.className = 'output stderr';
+            output.className = 'output-content stderr';
             output.textContent = result.error;
           } else if (result.success) {
             status.className = 'status success';
-            status.textContent = `✓ Success (exit code: ${result.exit_code})`;
+            status.textContent = `✓ Success (${result.exit_code})`;
             output.textContent = result.stdout || '(no output)';
           } else {
             status.className = 'status error';
-            status.textContent = `✗ ${result.stage === 'compile' ? 'Compilation' : 'Runtime'} Error`;
-            output.className = 'output stderr';
+            status.textContent = `✗ ${result.stage === 'compile' ? 'Compile' : 'Runtime'} Error`;
+            output.className = 'output-content stderr';
             output.textContent = result.stderr || result.stdout || '(no output)';
           }
         } catch (err) {
           status.className = 'status error';
           status.textContent = '✗ Connection Error';
-          output.className = 'output stderr';
+          output.className = 'output-content stderr';
           output.textContent = err.message;
         } finally {
           runBtn.disabled = false;
         }
       }
 
-      // Ctrl+Enter to run
-      document.getElementById('code').addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-          e.preventDefault();
-          runCode();
-        }
-      });
+      function copyCode() {
+        const code = editor.getValue();
+        navigator.clipboard.writeText(code).then(() => {
+          const btn = document.getElementById('copyBtn');
+          const text = document.getElementById('copyText');
+          btn.classList.add('copied');
+          text.textContent = 'Copied!';
+          setTimeout(() => {
+            btn.classList.remove('copied');
+            text.textContent = 'Copy';
+          }, 2000);
+        });
+      }
+
+      function clearOutput() {
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+        output.textContent = 'Run your code to see output here...';
+        output.className = 'output-content empty';
+        status.textContent = '';
+        status.className = 'status';
+      }
     </script>
   </body>
 </html>
