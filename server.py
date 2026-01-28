@@ -11,6 +11,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 PORT = 3001
 MAX_CODE_SIZE = 64 * 1024
 
+MAX_STDERR = 10000
+MAX_STDOUT = 10000
+
 
 class CExecutorHandler(BaseHTTPRequestHandler):
     def _set_headers(self, status=200, content_type='application/json'):
@@ -82,7 +85,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 return {
                     'success': False,
                     'stage': 'compile',
-                    'stderr': compile_result.stderr[:1000],
+                    'stderr': compile_result.stderr[:MAX_STDERR],
                     'exit_code': compile_result.returncode
                 }
 
@@ -115,8 +118,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             return {
                 'success': run_result.returncode == 0,
                 'stage': 'run',
-                'stdout': run_result.stdout[:1000],
-                'stderr': run_result.stderr[:1000],
+                'stdout': run_result.stdout[:MAX_STDOUT],
+                'stderr': run_result.stderr[:MAX_STDERR],
                 'exit_code': run_result.returncode
             }
 
