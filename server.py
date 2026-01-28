@@ -1,31 +1,54 @@
 #!/usr/bin/env python3
-"""Minimal C Code Executor with bubblewrap sandbox."""
+"""C Code Executor with bubblewrap sandbox."""
 
 import subprocess
 import tempfile
 import os
 import json
+import shutil
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 3001
+MAX_CODE_SIZE = 64 * 1024
 
 
 class CExecutorHandler(BaseHTTPRequestHandler):
+    def _set_headers(self, status=200, content_type='application/json'):
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.end_headers()
+
+    def do_OPTIONS(self):
+        self._set_headers(204)
+
     def do_POST(self):
         if self.path != '/execute':
-            self.send_response(404)
-            self.end_headers()
+            self._set_headers(404)
+            self.wfile.write(json.dumps({'error': 'Not found'}).encode())
             return
 
         content_length = int(self.headers.get('Content-Length', 0))
+        if content_length <= 0 or content_length > MAX_CODE_SIZE:
+            self._set_headers(413)
+            self.wfile.write(json.dumps({'error': 'Invalid size'}).encode())
+            return
+
         body = self.rfile.read(content_length)
-        data = json.loads(body.decode('utf-8'))
-        code = data.get('code', '')
+        try:
+            data = json.loads(body.decode('utf-8'))
+            code = data.get('code', '')
+        except json.JSONDecodeError:
+            self._set_headers(400)
+            self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode())
+            return
 
         result = self.execute_c_code(code)
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
+        self._set_headers(200)
         self.wfile.write(json.dumps(result).encode())
 
     def execute_c_code(self, code):
@@ -37,7 +60,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             with open(source_file, 'w') as f:
                 f.write(code)
 
-            # Compile with gcc inside minimal bwrap
+            # Compile with bwrap (read-only root, writable work_dir)
             compile_result = subprocess.run(
                 [
                     'bwrap',
@@ -46,8 +69,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--bind', work_dir, work_dir,
                     '--dev', '/dev',
                     '--proc', '/proc',
+                    '--die-with-parent',  # Kill if server dies
                     '--',
-                    'gcc', '-o', binary_file, source_file, '-lm',
+                    'gcc', '-o', binary_file, source_file, '-lm', '-Wall', '-Wextra',
                 ],
                 capture_output=True,
                 text=True,
@@ -58,12 +82,19 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 return {
                     'success': False,
                     'stage': 'compile',
-                    'stdout': compile_result.stdout,
-                    'stderr': compile_result.stderr,
+                    'stderr': compile_result.stderr[:1000],
                     'exit_code': compile_result.returncode
                 }
 
-            # Run binary inside minimal bwrap
+            if not os.path.exists(binary_file):
+                return {
+                    'success': False,
+                    'stage': 'compile',
+                    'stderr': 'Compilation failed: no binary output',
+                    'exit_code': -1
+                }
+
+            # Run with bwrap (isolated /tmp, read-only system)
             run_result = subprocess.run(
                 [
                     'bwrap',
@@ -72,6 +103,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--bind', work_dir, work_dir,
                     '--dev', '/dev',
                     '--proc', '/proc',
+                    '--die-with-parent',
                     '--',
                     binary_file,
                 ],
@@ -83,20 +115,21 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             return {
                 'success': run_result.returncode == 0,
                 'stage': 'run',
-                'stdout': run_result.stdout,
-                'stderr': run_result.stderr,
+                'stdout': run_result.stdout[:1000],
+                'stderr': run_result.stderr[:1000],
                 'exit_code': run_result.returncode
             }
 
         except subprocess.TimeoutExpired:
-            return {'success': False, 'stage': 'timeout', 'stdout': '', 'stderr': 'Timeout', 'exit_code': -1}
+            return {'success': False, 'stage': 'timeout', 'stderr': 'Execution timed out', 'exit_code': -1}
         except Exception as e:
-            return {'success': False, 'stage': 'error', 'stdout': '', 'stderr': str(e), 'exit_code': -1}
+            return {'success': False, 'stage': 'error', 'stderr': str(e), 'exit_code': -1}
         finally:
-            subprocess.run(['rm', '-rf', work_dir], capture_output=True)
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':
     server = HTTPServer(('127.0.0.1', PORT), CExecutorHandler)
-    print(f"Server running on http://127.0.0.1:{PORT}")
+    print(f"C Executor running on http://127.0.0.1:{PORT}")
+    print("Sandbox: bubblewrap (read-only filesystem)")
     server.serve_forever()

@@ -1,16 +1,21 @@
 #!/bin/bash
 set -e
 
-apt update
-apt install -y gcc bubblewrap python3
+echo "=== C Executor Installation ==="
 
+# Install deps
+apt update
+apt install -y gcc python3 bubblewrap
+
+# Setup directory
 mkdir -p /var/www/c-executor
-cp server.py /var/www/c-executor/
-cp c-executor.service /etc/systemd/system/
+
+# Copy files (run from same dir as script)
+cp "$(dirname "$0")/server.py" /var/www/c-executor/
+cp "$(dirname "$0")/c-executor.service" /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable c-executor
 systemctl restart c-executor
 
-echo "Done. Test with:"
-echo 'curl -X POST http://localhost:3001/execute -H "Content-Type: application/json" -d '"'"'{"code": "#include <stdio.h>\nint main() { printf(\"Hello\"); return 0; }"}'"'"
+echo "Done! Check status: sudo systemctl status c-executor"

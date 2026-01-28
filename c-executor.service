@@ -1,5 +1,5 @@
 [Unit]
-Description=C Code Executor API
+Description=C Code Executor API (Bubblewrap Sandbox)
 After=network.target
 
 [Service]
@@ -8,6 +8,13 @@ User=root
 WorkingDirectory=/var/www/c-executor
 ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
 Restart=always
+RestartSec=5
+
+# Minimal hardening (root is needed for bwrap bind mounts)
+NoNewPrivileges=false
+
+MemoryMax=512M
+CPUQuota=50%
 
 [Install]
 WantedBy=multi-user.target
