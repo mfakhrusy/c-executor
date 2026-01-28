@@ -67,11 +67,12 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             compile_result = subprocess.run(
                 [
                     'bwrap',
+                    '--tmpfs', '/',
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
                     '--ro-bind', '/lib', '/lib',
                     '--ro-bind', '/lib64', '/lib64',
-                    '--tmpfs', '/etc',  # Empty /etc - blocks passwd reading!
+                    '--dir', '/work',
                     '--ro-bind', '/etc/alternatives', '/etc/alternatives',  # GCC needs this
                     '--ro-bind', '/etc/ld.so.cache', '/etc/ld.so.cache',   # Dynamic linker needs this
                     '--tmpfs', '/tmp',
@@ -107,14 +108,15 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             run_result = subprocess.run(
                 [
                     'bwrap',
+                    '--tmpfs', '/',
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
                     '--ro-bind', '/lib', '/lib',
                     '--ro-bind', '/lib64', '/lib64',
                     '--tmpfs', '/etc',  # Empty /etc - blocks passwd reading!
+                    '--dir', '/work',
                     '--ro-bind', '/etc/alternatives', '/etc/alternatives',  # GCC needs this
                     '--ro-bind', '/etc/ld.so.cache', '/etc/ld.so.cache',   # Dynamic linker needs this
-                    '--tmpfs', '/tmp',
                     '--bind', work_dir, work_dir,
                     '--dev', '/dev',
                     '--proc', '/proc',
