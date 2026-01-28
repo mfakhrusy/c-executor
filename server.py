@@ -198,9 +198,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
                     # Sandboxing - don't unshare user since we use sudo
-                    '--unshare-all',
-                    '--uid', '0',     # Map to root inside namespace (needed for lo setup)
-                    '--gid', '0',     # Map to root group inside namespace
+                    # '--unshare-all',
+                    # '--uid', '0',     # Map to root inside namespace (needed for lo setup)
+                    # '--gid', '0',     # Map to root group inside namespace
                     '--die-with-parent',
                     # Execute gcc
                     '--',
@@ -254,6 +254,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             run_result = subprocess.run(
                 [
                     'bwrap',
+                    '--unshare-user', '--unshare-ipc', '--unshare-pid', '--unshare-uts', '--unshare-cgroup',
                     # Minimal system for running
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/lib', '/lib',
@@ -265,9 +266,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
                     # Stricter isolation for execution
-                    '--unshare-all',
-                    '--uid', '0',     # Map to root inside namespace (needed for lo setup)
-                    '--gid', '0',     # Map to root group inside namespace
+                    # '--unshare-all',
+                    # '--uid', '0',     # Map to root inside namespace (needed for lo setup)
+                    # '--gid', '0',     # Map to root group inside namespace
                     '--die-with-parent',
                     '--new-session',
                     # Execute binary
