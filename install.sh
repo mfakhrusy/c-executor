@@ -42,12 +42,14 @@ else
     echo "Created firejail.users with c-executor"
 fi
 
-# Fix firejail permissions
-# Sticky bit + world writable so c-executor can create lockfiles (firejail blocks 'nobody')
+# Fix firejail permissions - firejail is strict about /run/firejail being 0755
 mkdir -p /run/firejail
-chmod 1777 /run/firejail
+chmod 0755 /run/firejail
 chown root:root /run/firejail
 chmod 4755 /usr/bin/firejail
+
+# Clean up any stale lock files from previous failed runs
+rm -f /run/firejail/firejail-run.lock
 
 # Step 4: Copy project files
 echo "[4/7] Copying project files..."
@@ -69,10 +71,27 @@ echo "[6/7] Installing systemd service..."
 if [ -f /var/www/c-executor/c-executor.service ]; then
     cp /var/www/c-executor/c-executor.service /etc/systemd/system/
     
-    # Remove NoNewPrivileges if present (breaks firejail setuid)
-    if grep -q "NoNewPrivileges=yes" /etc/systemd/system/c-executor.service; then
-        sed -i '/NoNewPrivileges=yes/d' /etc/systemd/system/c-executor.service
-        echo "Removed NoNewPrivileges from service file"
+    SERVICE_FILE="/etc/systemd/system/c-executor.service"
+    
+    # Fix NoNewPrivileges - must be false for firejail setuid to work
+    if grep -qE "NoNewPrivileges\s*=\s*(true|yes)" "$SERVICE_FILE"; then
+        sed -i 's/NoNewPrivileges\s*=\s*(true|yes)/NoNewPrivileges=false/' "$SERVICE_FILE"
+        echo "Fixed NoNewPrivileges to false (required for firejail setuid)"
+    fi
+    
+    # If ProtectSystem=strict is used, ensure /run/firejail is writable
+    if grep -qE "ProtectSystem\s*=\s*strict" "$SERVICE_FILE"; then
+        if grep -qE "ReadWritePaths\s*=" "$SERVICE_FILE"; then
+            # Add /run/firejail to existing ReadWritePaths if not present
+            if ! grep -qE "ReadWritePaths.*/run/firejail" "$SERVICE_FILE"; then
+                sed -i 's|ReadWritePaths\s*=\s*\(.*\)|ReadWritePaths=\1 /run/firejail|' "$SERVICE_FILE"
+                echo "Added /run/firejail to ReadWritePaths"
+            fi
+        else
+            # Add ReadWritePaths line after ProtectSystem
+            sed -i '/ProtectSystem.*strict/a ReadWritePaths=/tmp /run/firejail' "$SERVICE_FILE"
+            echo "Added ReadWritePaths for firejail runtime"
+        fi
     fi
     
     systemctl daemon-reload
@@ -97,4 +116,4 @@ echo ""
 echo "Next steps:"
 echo "  1. Add Caddy config (see INSTALL.md)"
 echo "  2. Reload Caddy: sudo systemctl reload caddy"
-echo "  3. Open https://c-playground.your-domain.com "
+echo "  3. Open https://c-playground.your-domain.com  "
