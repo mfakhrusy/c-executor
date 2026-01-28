@@ -25,22 +25,21 @@ apt-get install -y firejail firejail-profiles
 echo "[3/7] Configuring firejail..."
 firejail --version
 
-# Verify nobody user exists
-if ! id -u nobody &>/dev/null; then
-    echo "ERROR: 'nobody' user does not exist on this system"
-    exit 1
+# Create dedicated c-executor user (firejail blocks 'nobody' user)
+if ! id -u c-executor &>/dev/null; then
+    useradd -r -s /usr/sbin/nologin -d /var/www/c-executor c-executor
+    echo "Created c-executor user"
 fi
 
-# Allow nobody user to use firejail (matches systemd service User=nobody)
+# Allow c-executor user to use firejail
 if [ -f /etc/firejail/firejail.users ]; then
-    if ! grep -q "^nobody$" /etc/firejail/firejail.users; then
-        echo "nobody" >> /etc/firejail/firejail.users
-        echo "Added nobody to firejail.users"
+    if ! grep -q "^c-executor$" /etc/firejail/firejail.users; then
+        echo "c-executor" >> /etc/firejail/firejail.users
+        echo "Added c-executor to firejail.users"
     fi
 else
-    # If file doesn't exist, create it with nobody
-    echo "nobody" > /etc/firejail/firejail.users
-    echo "Created firejail.users with nobody"
+    echo "c-executor" > /etc/firejail/firejail.users
+    echo "Created firejail.users with c-executor"
 fi
 
 # Step 4: Copy project files
@@ -55,7 +54,7 @@ cp "$SCRIPT_DIR/INSTALL.md" /var/www/c-executor/ 2>/dev/null || true
 
 # Step 5: Set permissions
 echo "[5/7] Setting permissions..."
-chown -R nobody:nogroup /var/www/c-executor
+chown -R c-executor:c-executor /var/www/c-executor
 chmod +x /var/www/c-executor/server.py
 
 # Step 6: Install systemd service

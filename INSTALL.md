@@ -61,7 +61,7 @@ scp ~/c-executor/c-executor.service root@YOUR_SERVER:/var/www/c-executor/
 ## Section 6: Set Permissions
 
 ```bash
-sudo chown -R nobody:nogroup /var/www/c-executor
+sudo chown -R c-executor:c-executor /var/www/c-executor
 sudo chmod +x /var/www/c-executor/server.py
 ```
 

@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=nobody
-Group=nogroup
+User=c-executor
+Group=c-executor
 WorkingDirectory=/var/www/c-executor
 ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
 Restart=always
