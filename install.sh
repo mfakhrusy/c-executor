@@ -25,16 +25,16 @@ apt-get install -y firejail firejail-profiles
 echo "[3/7] Configuring firejail..."
 firejail --version
 
-# Allow www-data user to use firejail
+# Allow nobody user to use firejail (matches systemd service User=nobody)
 if [ -f /etc/firejail/firejail.users ]; then
-    if ! grep -q "^www-data$" /etc/firejail/firejail.users; then
-        echo "www-data" >> /etc/firejail/firejail.users
-        echo "Added www-data to firejail.users"
+    if ! grep -q "^nobody$" /etc/firejail/firejail.users; then
+        echo "nobody" >> /etc/firejail/firejail.users
+        echo "Added nobody to firejail.users"
     fi
 else
-    # If file doesn't exist, create it with www-data
-    echo "www-data" > /etc/firejail/firejail.users
-    echo "Created firejail.users with www-data"
+    # If file doesn't exist, create it with nobody
+    echo "nobody" > /etc/firejail/firejail.users
+    echo "Created firejail.users with nobody"
 fi
 
 # Step 4: Copy project files
@@ -49,7 +49,7 @@ cp "$SCRIPT_DIR/INSTALL.md" /var/www/c-executor/ 2>/dev/null || true
 
 # Step 5: Set permissions
 echo "[5/7] Setting permissions..."
-chown -R www-data:www-data /var/www/c-executor
+chown -R nobody:nogroup /var/www/c-executor
 chmod +x /var/www/c-executor/server.py
 
 # Step 6: Install systemd service
