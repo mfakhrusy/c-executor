@@ -68,6 +68,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 [
                     'bwrap',
                     '--tmpfs', '/',
+                    '--unshare-pid',
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
                     '--ro-bind', '/lib', '/lib',
@@ -108,6 +109,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 [
                     'bwrap',
                     '--tmpfs', '/',
+                    '--unshare-pid',
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
                     '--ro-bind', '/lib', '/lib',
