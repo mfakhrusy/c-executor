@@ -42,6 +42,12 @@ else
     echo "Created firejail.users with c-executor"
 fi
 
+# Fix firejail permissions
+mkdir -p /run/firejail
+chmod 755 /run/firejail
+chown root:root /run/firejail
+chmod 4755 /usr/bin/firejail
+
 # Step 4: Copy project files
 echo "[4/7] Copying project files..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
