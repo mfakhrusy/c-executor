@@ -25,6 +25,12 @@ apt-get install -y firejail firejail-profiles
 echo "[3/7] Configuring firejail..."
 firejail --version
 
+# Verify nobody user exists
+if ! id -u nobody &>/dev/null; then
+    echo "ERROR: 'nobody' user does not exist on this system"
+    exit 1
+fi
+
 # Allow nobody user to use firejail (matches systemd service User=nobody)
 if [ -f /etc/firejail/firejail.users ]; then
     if ! grep -q "^nobody$" /etc/firejail/firejail.users; then

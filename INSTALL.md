@@ -113,7 +113,7 @@ Expected output:
 Edit your Caddyfile:
 
 ```bash
-sudo nano /etc/caddy/Caddyfile
+sudo vim /etc/caddy/Caddyfile
 ```
 
 Add this block:

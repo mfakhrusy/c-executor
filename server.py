@@ -82,6 +82,13 @@ class CExecutorHandler(BaseHTTPRequestHandler):
         if self.path == '/health':
             self._set_headers()
             self.wfile.write(json.dumps({'status': 'ok'}).encode())
+        elif self.path == '/whoami':
+            import pwd
+            user = pwd.getpwuid(os.getuid()).pw_name
+            uid = os.getuid()
+            gid = os.getgid()
+            self._set_headers()
+            self.wfile.write(json.dumps({'user': user, 'uid': uid, 'gid': gid}).encode())
         else:
             self._set_headers(404)
             self.wfile.write(json.dumps({'error': 'Not found'}).encode())
