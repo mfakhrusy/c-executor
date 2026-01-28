@@ -25,14 +25,20 @@ apt-get install -y firejail firejail-profiles
 echo "[3/7] Verifying firejail installation..."
 firejail --version
 
-# Step 4: Create directory
-echo "[4/7] Setting up directory..."
+# Step 4: Copy project files
+echo "[4/7] Copying project files..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p /var/www/c-executor
+cp "$SCRIPT_DIR/index.html" /var/www/c-executor/
+cp "$SCRIPT_DIR/server.py" /var/www/c-executor/
+cp "$SCRIPT_DIR/c-executor.service" /var/www/c-executor/
+cp "$SCRIPT_DIR/README.md" /var/www/c-executor/ 2>/dev/null || true
+cp "$SCRIPT_DIR/INSTALL.md" /var/www/c-executor/ 2>/dev/null || true
 
 # Step 5: Set permissions
 echo "[5/7] Setting permissions..."
-chown -R nobody:nogroup /var/www/c-executor
-chmod +x /var/www/c-executor/server.py 2>/dev/null || true
+chown -R www-data:www-data /var/www/c-executor
+chmod +x /var/www/c-executor/server.py
 
 # Step 6: Install systemd service
 echo "[6/7] Installing systemd service..."
@@ -55,8 +61,9 @@ systemctl status c-executor --no-pager || true
 echo ""
 echo "=== Installation complete! ==="
 echo ""
+echo "Files copied to /var/www/c-executor/"
+echo ""
 echo "Next steps:"
-echo "  1. Copy files to /var/www/c-executor/ (if not already done)"
-echo "  2. Add Caddy config (see INSTALL.md)"
-echo "  3. Reload Caddy: sudo systemctl reload caddy"
-echo "  4. Open https://c-playground.your-domain.com"
+echo "  1. Add Caddy config (see INSTALL.md)"
+echo "  2. Reload Caddy: sudo systemctl reload caddy"
+echo "  3. Open https://c-playground.your-domain.com"
