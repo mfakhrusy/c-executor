@@ -1,36 +1,31 @@
-# TODO: outdated, using bubblewrap now
-# Lightweight C Code Executor
+# C Playground
 
-A sandboxed C code execution API using Python + gcc + firejail.
+A sandboxed C code execution service using Python + GCC + bubblewrap. Designed to be embedded as an iframe in blogs.
+
+**Live demo:** [c-executor.fahru.me](https://c-executor.fahru.me)
 
 <img width="893" height="670" alt="image" src="https://github.com/user-attachments/assets/7d57c8d1-90b0-46fe-94d8-8fe1962f04e8" />
 
-
 ## Features
 
-- **Firejail sandbox** - Both compilation and execution run in isolated environments
-- **Seccomp filtering** - Syscall filtering for additional security
+- **Bubblewrap sandbox** - Both compilation and execution run in isolated containers
 - **No network access** - Sandboxed code cannot make network connections
-- **Resource limits** - Memory, CPU, file size, and process limits
-- **Filesystem isolation** - Cannot read sensitive files like `/etc/passwd`
+- **Read-only filesystem** - Only temp directory is writable
+- **Resource limits** - Memory and CPU limits via systemd
+- **Iframe-friendly** - Designed for embedding in blogs
 
 ## Requirements
 
 - Ubuntu/Debian (20.04+)
 - Python 3.6+
 - GCC compiler
-- Firejail
+- Bubblewrap
 
 ## Quick Start (Local Testing)
 
 ```bash
 # Install dependencies
-sudo apt update && sudo apt install -y gcc python3 software-properties-common
-
-# Install firejail from PPA
-sudo add-apt-repository ppa:deki/firejail
-sudo apt-get update
-sudo apt-get install -y firejail firejail-profiles
+sudo apt update && sudo apt install -y gcc python3 bubblewrap
 
 # Run the server
 python3 server.py
@@ -38,15 +33,13 @@ python3 server.py
 
 Server runs on `http://127.0.0.1:3001`
 
-# Run the client for local testing
-
 On a different terminal tab:
 
-```
+```bash
 python3 -m http.server
 ```
 
-Visit `http://127.0.0.1:8000` in the browser
+Visit `http://127.0.0.1:8000` in the browser.
 
 ## Production Deployment
 
@@ -55,9 +48,13 @@ See [INSTALL.md](INSTALL.md) for step-by-step instructions.
 ### Quick Install Script
 
 ```bash
-# On your VPS as root
+# Clone to your server
+git clone https://github.com/mfakhrusy/c-playground-wasmer.git
+cd c-playground-wasmer
 sudo bash install.sh
 ```
+
+Then configure your Caddy reverse proxy manually.
 
 ## API Reference
 
@@ -88,20 +85,8 @@ Execute C code.
 {
   "success": false,
   "stage": "compile",
-  "stdout": "",
   "stderr": "main.c:1:1: error: ...",
   "exit_code": 1
-}
-```
-
-### GET /health
-
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok"
 }
 ```
 
@@ -109,7 +94,7 @@ Health check endpoint.
 
 ```html
 <iframe 
-  src="https://c-playground.your-domain.com" 
+  src="https://c-executor.fahru.me" 
   width="100%" 
   height="600" 
   frameborder="0"
@@ -119,51 +104,33 @@ Health check endpoint.
 
 ## Security
 
-Both **gcc** and the compiled binary run inside firejail with:
+Both **GCC** and the compiled binary run inside bubblewrap with:
 
-| Feature | Compile | Execute |
-|---------|---------|---------|
-| `--seccomp` | ✅ | ✅ |
-| `--net=none` | ✅ | ✅ |
-| `--caps.drop=all` | ✅ | ✅ |
-| `--noroot` | ✅ | ✅ |
-| `--nonewprivs` | ✅ | ✅ |
-| `--private-etc` | Limited | None |
-| `/usr` access | Read-only | None |
-| Resource limits | ✅ | ✅ |
+| Feature | Description |
+|---------|-------------|
+| `--tmpfs /` | Temporary root filesystem |
+| `--ro-bind` | Read-only system directories |
+| `--unshare-pid` | Isolated PID namespace |
+| `--die-with-parent` | Kill if server dies |
+| No network | No network namespace mounted |
 
 This prevents:
-- `#include "/etc/passwd"` leaking file contents
-- Network connections from compiled code
-- Fork bombs and resource exhaustion
+- `#include "/etc/passwd"` leaking file contents (read-only binds)
+- Fork bombs and resource exhaustion (systemd limits)
 - Privilege escalation
 
 ## Troubleshooting
 
-### "firejail: command not found"
+### "bwrap: command not found"
 
 ```bash
-sudo add-apt-repository ppa:deki/firejail
-sudo apt-get update
-sudo apt-get install -y firejail firejail-profiles
-```
-
-### "gcc: command not found"
-
-```bash
-sudo apt install -y gcc build-essential
+sudo apt install -y bubblewrap
 ```
 
 ### Service won't start
 
 ```bash
 sudo journalctl -u c-executor -n 50
-```
-
-### Firejail permission issues
-
-```bash
-sudo chmod 4755 /usr/bin/firejail
 ```
 
 ## Memory Usage

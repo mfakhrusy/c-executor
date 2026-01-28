@@ -1,100 +1,125 @@
-# TODO: outdated, using bubblewrap now
 # C Executor Installation Guide
 
-A sandboxed C code execution API using Python + gcc + firejail.
+A sandboxed C code execution API using Python + GCC + bubblewrap.
 
 ## Prerequisites
 
 - Ubuntu/Debian VPS (20.04+)
-- Caddy web server installed
 - Root access
+- A domain pointed to your server (for HTTPS)
 
 ---
 
-## Section 1: Install Dependencies
+## Option 1: Quick Install
 
 ```bash
-sudo apt update && sudo apt install -y gcc python3 software-properties-common
+git clone https://github.com/mfakhrusy/c-playground-wasmer.git
+cd c-playground-wasmer
+sudo bash install.sh
+```
+
+This installs:
+- GCC, Python3, bubblewrap, curl
+- Caddy web server
+- Copies files to `/var/www/c-executor`
+- Sets up systemd service
+
+**Note:** You'll need to manually configure Caddy for your domain (see Section 6).
+
+---
+
+## Option 2: Manual Installation
+
+### Section 1: Install Dependencies
+
+```bash
+sudo apt update
+sudo apt install -y gcc python3 bubblewrap curl
 ```
 
 ---
 
-## Section 2: Install Firejail (PPA)
+### Section 2: Install Caddy
 
 ```bash
-sudo add-apt-repository ppa:deki/firejail
-sudo apt-get update
-sudo apt-get install -y firejail firejail-profiles
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install -y caddy
 ```
 
 ---
 
-## Section 3: Verify Firejail
+### Section 3: Verify Bubblewrap
 
 ```bash
-firejail --version
+bwrap --version
 ```
 
-Expected output: `firejail version 0.9.x or higher`
+Expected output: `bubblewrap 0.x.x`
 
 ---
 
-## Section 4: Create Directory
+### Section 4: Create Directory and Copy Files
 
 ```bash
 sudo mkdir -p /var/www/c-executor
+sudo cp server.py index.html /var/www/c-executor/
+sudo cp c-executor.service /etc/systemd/system/
 ```
 
 ---
 
-## Section 5: Copy Files to Server
-
-Run this **from your local machine**:
+### Section 5: Start the Service
 
 ```bash
-scp ~/c-executor/server.py root@YOUR_SERVER:/var/www/c-executor/
-scp ~/c-executor/index.html root@YOUR_SERVER:/var/www/c-executor/
-scp ~/c-executor/c-executor.service root@YOUR_SERVER:/var/www/c-executor/
-```
-
----
-
-## Section 6: Set Permissions
-
-```bash
-sudo chown -R c-executor:c-executor /var/www/c-executor
-sudo chmod +x /var/www/c-executor/server.py
-```
-
----
-
-## Section 7: Install Systemd Service
-
-```bash
-sudo cp /var/www/c-executor/c-executor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable c-executor
 sudo systemctl start c-executor
 ```
 
----
-
-## Section 8: Check Service Status
+Check status:
 
 ```bash
 sudo systemctl status c-executor
 ```
 
-Expected output:
+---
+
+### Section 6: Configure Caddy
+
+Edit your Caddyfile:
+
+```bash
+sudo nano /etc/caddy/Caddyfile
 ```
-● c-executor.service - C Code Executor API
-     Loaded: loaded
-     Active: active (running)
+
+Add this block (replace `c-executor.yourdomain.com` with your domain):
+
+```
+c-executor.yourdomain.com {
+    root * /var/www/c-executor
+    file_server
+
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy 127.0.0.1:3001
+    }
+}
+```
+
+Reload Caddy:
+
+```bash
+sudo systemctl reload caddy
 ```
 
 ---
 
-## Section 9: Test API Locally on Server
+### Section 7: Test
+
+Test API locally:
 
 ```bash
 curl -X POST http://127.0.0.1:3001/execute \
@@ -107,50 +132,10 @@ Expected output:
 {"success": true, "stage": "run", "stdout": "Hello", "stderr": "", "exit_code": 0}
 ```
 
----
-
-## Section 10: Configure Caddy
-
-Edit your Caddyfile:
+Test production:
 
 ```bash
-sudo vim /etc/caddy/Caddyfile
-```
-
-Add this block:
-
-```
-c-playground.your.domain {
-    root * /var/www/c-executor
-    file_server
-
-    handle /api/* {
-        uri strip_prefix /api
-        reverse_proxy 127.0.0.1:3001
-    }
-}
-```
-
----
-
-## Section 11: Reload Caddy
-
-```bash
-sudo systemctl reload caddy
-```
-
----
-
-## Section 12: Test Production
-
-Open in browser:
-```
-https://c-playground.your.domain
-```
-
-Or test API:
-```bash
-curl -X POST https://c-playground.your.domain/api/execute \
+curl -X POST https://c-executor.yourdomain.com/api/execute \
   -H "Content-Type: application/json" \
   -d '{"code": "#include<stdio.h>\nint main() { printf(\"Hello\"); return 0; }"}'
 ```
@@ -177,38 +162,27 @@ sudo systemctl restart c-executor
 ss -tlnp | grep 3001
 ```
 
-### Test firejail manually
+### Test bubblewrap manually
 
 ```bash
 echo '#include<stdio.h>
 int main() { printf("test"); return 0; }' > /tmp/test.c
-gcc -o /tmp/test /tmp/test.c
-firejail --quiet --net=none --seccomp /tmp/test
-```
-
-### Firejail permission issues
-
-If firejail fails with permission errors:
-
-```bash
-sudo chmod 4755 /usr/bin/firejail
+bwrap --ro-bind / / --dev /dev /usr/bin/gcc -o /tmp/test /tmp/test.c
+/tmp/test
 ```
 
 ---
 
 ## Security Features
 
-| Feature | Protection |
-|---------|------------|
-| `--seccomp` | Syscall filtering |
-| `--net=none` | No network access |
-| `--private=DIR` | Isolated filesystem |
-| `--private-dev` | Limited /dev access |
-| `--caps.drop=all` | No Linux capabilities |
-| `--noroot` | No root in sandbox |
-| `--nonewprivs` | Can't gain privileges |
-| `--rlimit-*` | Resource limits |
-| PIE/RELRO | ASLR + memory protection |
+| Feature | Description |
+|---------|-------------|
+| `--tmpfs /` | Temporary root filesystem |
+| `--ro-bind` | Read-only system directories |
+| `--unshare-pid` | Isolated PID namespace |
+| `--die-with-parent` | Process dies with server |
+| Timeouts | 10s compile, 5s run |
+| Output limits | 10KB max stdout/stderr |
 
 ---
 
@@ -216,33 +190,10 @@ sudo chmod 4755 /usr/bin/firejail
 
 ```html
 <iframe 
-  src="https://c-playground.your.domain" 
+  src="https://c-executor.yourdomain.com" 
   width="100%" 
   height="600" 
   frameborder="0"
   style="border: 1px solid #333; border-radius: 8px;">
 </iframe>
-```
-
----
-
-## Restrict CORS (Production)
-
-To allow only your blog domain, set environment variable in the service file:
-
-```bash
-sudo nano /etc/systemd/system/c-executor.service
-```
-
-Add under `[Service]`:
-
-```
-Environment=ALLOWED_ORIGINS=https://blog.your.domain,https://c-playground.your.domain
-```
-
-Then reload:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart c-executor
 ```
