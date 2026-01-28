@@ -42,8 +42,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 [
                     'bwrap',
                     '--ro-bind', '/', '/',
-                    '--bind', work_dir, work_dir,
                     '--tmpfs', '/tmp',
+                    '--bind', work_dir, work_dir,
                     '--dev', '/dev',
                     '--proc', '/proc',
                     '--',
@@ -68,8 +68,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 [
                     'bwrap',
                     '--ro-bind', '/', '/',
-                    '--bind', work_dir, work_dir,
                     '--tmpfs', '/tmp',
+                    '--bind', work_dir, work_dir,
                     '--dev', '/dev',
                     '--proc', '/proc',
                     '--',
