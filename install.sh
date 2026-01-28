@@ -43,8 +43,9 @@ else
 fi
 
 # Fix firejail permissions
+# Sticky bit + world writable so c-executor can create lockfiles (firejail blocks 'nobody')
 mkdir -p /run/firejail
-chmod 755 /run/firejail
+chmod 1777 /run/firejail
 chown root:root /run/firejail
 chmod 4755 /usr/bin/firejail
 
@@ -67,6 +68,13 @@ chmod +x /var/www/c-executor/server.py
 echo "[6/7] Installing systemd service..."
 if [ -f /var/www/c-executor/c-executor.service ]; then
     cp /var/www/c-executor/c-executor.service /etc/systemd/system/
+    
+    # Remove NoNewPrivileges if present (breaks firejail setuid)
+    if grep -q "NoNewPrivileges=yes" /etc/systemd/system/c-executor.service; then
+        sed -i '/NoNewPrivileges=yes/d' /etc/systemd/system/c-executor.service
+        echo "Removed NoNewPrivileges from service file"
+    fi
+    
     systemctl daemon-reload
     systemctl enable c-executor
     systemctl start c-executor
@@ -89,4 +97,4 @@ echo ""
 echo "Next steps:"
 echo "  1. Add Caddy config (see INSTALL.md)"
 echo "  2. Reload Caddy: sudo systemctl reload caddy"
-echo "  3. Open https://c-playground.your-domain.com"
+echo "  3. Open https://c-playground.your-domain.com "
