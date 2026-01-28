@@ -1,401 +1,100 @@
 #!/usr/bin/env python3
-"""
-Lightweight C Code Executor
-A minimal HTTP server that compiles and runs C code using gcc + bubblewrap.
-
-Requires: gcc, bubblewrap, sudo
-Install: sudo apt install gcc bubblewrap sudo
-"""
+"""Minimal C Code Executor with bubblewrap sandbox."""
 
 import subprocess
 import tempfile
 import os
 import json
-import secrets
-import shutil
-import signal
-import atexit
-import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Configuration
 PORT = 3001
-MAX_CODE_SIZE = 64 * 1024  # 64KB max code size
-MAX_OUTPUT_SIZE = 64 * 1024  # 64KB max output
-COMPILE_TIMEOUT = 10  # seconds
-RUN_TIMEOUT = 5  # seconds
-
-# Allowed origins for CORS (set to specific domain in production)
-ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
-
-# Track temp directories for cleanup on shutdown
-_temp_dirs = set()
-
-
-def cleanup_temp_dirs():
-    """Cleanup any remaining temp directories on shutdown."""
-    for d in list(_temp_dirs):
-        try:
-            shutil.rmtree(d, ignore_errors=True)
-        except Exception:
-            pass
-    _temp_dirs.clear()
-
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully."""
-    cleanup_temp_dirs()
-    raise SystemExit(0)
-
-
-# Register cleanup handlers
-atexit.register(cleanup_temp_dirs)
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
 
 
 class CExecutorHandler(BaseHTTPRequestHandler):
-    def _set_headers(self, status=200, content_type='application/json'):
-        self.send_response(status)
-        self.send_header('Content-Type', content_type)
-        
-        # CORS headers - restrict in production
-        origin = self.headers.get('Origin', '')
-        if ALLOWED_ORIGINS == '*':
-            self.send_header('Access-Control-Allow-Origin', '*')
-        elif origin in ALLOWED_ORIGINS.split(','):
-            self.send_header('Access-Control-Allow-Origin', origin)
-        
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        
-        # Security headers
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('X-Frame-Options', 'DENY')
-        self.send_header('Cache-Control', 'no-store')
-        self.end_headers()
-
-    def do_OPTIONS(self):
-        self._set_headers(204)
-
-    def do_GET(self):
-        if self.path == '/health':
-            self._set_headers()
-            self.wfile.write(json.dumps({'status': 'ok'}).encode())
-        elif self.path == '/whoami':
-            import pwd
-            user = pwd.getpwuid(os.getuid()).pw_name
-            uid = os.getuid()
-            gid = os.getgid()
-            self._set_headers()
-            self.wfile.write(json.dumps({'user': user, 'uid': uid, 'gid': gid}).encode())
-        else:
-            self._set_headers(404)
-            self.wfile.write(json.dumps({'error': 'Not found'}).encode())
-
     def do_POST(self):
         if self.path != '/execute':
-            self._set_headers(404)
-            self.wfile.write(json.dumps({'error': 'Not found'}).encode())
+            self.send_response(404)
+            self.end_headers()
             return
 
-        try:
-            # Validate Content-Length header exists and is valid
-            content_length_header = self.headers.get('Content-Length')
-            if content_length_header is None:
-                self._set_headers(411)
-                self.wfile.write(json.dumps({'error': 'Content-Length required'}).encode())
-                return
-            
-            try:
-                content_length = int(content_length_header)
-            except ValueError:
-                self._set_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid Content-Length'}).encode())
-                return
-            
-            if content_length < 0 or content_length > MAX_CODE_SIZE:
-                self._set_headers(413)
-                self.wfile.write(json.dumps({'error': 'Code too large'}).encode())
-                return
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length)
+        data = json.loads(body.decode('utf-8'))
+        code = data.get('code', '')
 
-            body = self.rfile.read(content_length)
-            
-            # Validate UTF-8 encoding
-            try:
-                body_str = body.decode('utf-8')
-            except UnicodeDecodeError:
-                self._set_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid UTF-8 encoding'}).encode())
-                return
-            
-            data = json.loads(body_str)
-            
-            # Validate data is a dict
-            if not isinstance(data, dict):
-                self._set_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid request format'}).encode())
-                return
-            
-            code = data.get('code', '')
-            
-            # Validate code is a string
-            if not isinstance(code, str):
-                self._set_headers(400)
-                self.wfile.write(json.dumps({'error': 'Code must be a string'}).encode())
-                return
-
-            if not code.strip():
-                self._set_headers(400)
-                self.wfile.write(json.dumps({'error': 'No code provided'}).encode())
-                return
-
-            result = self.execute_c_code(code)
-            self._set_headers()
-            self.wfile.write(json.dumps(result).encode())
-
-        except json.JSONDecodeError:
-            self._set_headers(400)
-            self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode())
-        except Exception:
-            # Don't leak internal error details
-            self._set_headers(500)
-            self.wfile.write(json.dumps({'error': 'Internal server error'}).encode())
+        result = self.execute_c_code(code)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(result).encode())
 
     def execute_c_code(self, code):
-        """Compile and execute C code in bubblewrap sandbox."""
-        # Use secure random suffix for temp directory
-        work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}')
-        _temp_dirs.add(work_dir)
-        
+        work_dir = tempfile.mkdtemp(prefix='c_exec_')
         source_file = os.path.join(work_dir, 'main.c')
         binary_file = os.path.join(work_dir, 'main')
 
         try:
-            # Write source code with restricted permissions
-            fd = os.open(source_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
-            with os.fdopen(fd, 'w') as f:
+            with open(source_file, 'w') as f:
                 f.write(code)
 
-            # Compile with gcc inside bubblewrap sandbox using sudo
-            # We use sudo because user namespaces are disabled by AppArmor
+            # Compile with gcc inside minimal bwrap
             compile_result = subprocess.run(
                 [
                     'bwrap',
-                    # System directories (read-only)
-                    '--ro-bind', '/usr', '/usr',
-                    '--ro-bind', '/bin', '/bin',
-                    '--ro-bind', '/sbin', '/sbin',
-                    '--ro-bind', '/lib', '/lib',
-                    '--ro-bind', '/lib64', '/lib64',
-                    '--ro-bind', '/etc', '/etc',
-                    # Essential filesystems
-                    '--proc', '/proc',
+                    '--ro-bind', '/', '/',
+                    '--bind', work_dir, work_dir,
                     '--dev', '/dev',
-                    # Isolated temp inside sandbox
-                    '--tmpfs', '/tmp',
-                    # Work directory (map to /work inside sandbox)
-                    '--dir', '/work',
-                    '--bind', work_dir, '/work',
-                    # Sandboxing - don't unshare user since we use sudo
-                    # '--unshare-all',
-                    # '--uid', '0',     # Map to root inside namespace (needed for lo setup)
-                    # '--gid', '0',     # Map to root group inside namespace
-                    '--die-with-parent',
-                    # Execute gcc
+                    '--proc', '/proc',
                     '--',
-                    '/usr/bin/gcc',
-                    '-o', '/work/main',
-                    '/work/main.c',
-                    '-lm',
-                    '-Wall',
-                    '-Wextra',
-                    '-O2',
-                    '-std=c99',
-                    '-pedantic',
+                    'gcc', '-o', binary_file, source_file, '-lm',
                 ],
                 capture_output=True,
                 text=True,
-                timeout=COMPILE_TIMEOUT,
-                cwd='/',
-                env={},
-                shell=False,
+                timeout=10,
             )
 
             if compile_result.returncode != 0:
-                # Debug: log the raw output
-                print(f"DEBUG: gcc failed with code {compile_result.returncode}")
-                print(f"DEBUG: stdout={repr(compile_result.stdout)}")
-                print(f"DEBUG: stderr={repr(compile_result.stderr)}")
-                return {
-                    'success': False,
-                    'stage': 'compile',
-                    'stdout': compile_result.stdout or '',
-                    'stderr': compile_result.stderr or f'gcc failed silently with code {compile_result.returncode}',
-                    'exit_code': compile_result.returncode
-                }
-            # Verify binary was created (gcc via sudo creates it as root)
-            if not os.path.exists(binary_file):
                 return {
                     'success': False,
                     'stage': 'compile',
                     'stdout': compile_result.stdout,
-                    'stderr': 'Compilation failed: no output file',
-                    'exit_code': -1
+                    'stderr': compile_result.stderr,
+                    'exit_code': compile_result.returncode
                 }
 
-            # Make binary executable (may fail if owned by root, that's ok)
-            try:
-                os.chmod(binary_file, 0o500)
-            except PermissionError:
-                pass  # Binary owned by root, but will still execute via sudo
-
-            # Execute in bubblewrap sandbox with network isolation
+            # Run binary inside minimal bwrap
             run_result = subprocess.run(
                 [
                     'bwrap',
-                    '--unshare-user', '--unshare-ipc', '--unshare-pid', '--unshare-uts', '--unshare-cgroup',
-                    # Minimal system for running
-                    '--ro-bind', '/usr', '/usr',
-                    '--ro-bind', '/lib', '/lib',
-                    '--ro-bind', '/lib64', '/lib64',
-                    '--proc', '/proc',
+                    '--ro-bind', '/', '/',
+                    '--bind', work_dir, work_dir,
                     '--dev', '/dev',
-                    '--tmpfs', '/tmp',
-                    # Work directory with binary
-                    '--dir', '/work',
-                    '--bind', work_dir, '/work',
-                    # Stricter isolation for execution
-                    # '--unshare-all',
-                    # '--uid', '0',     # Map to root inside namespace (needed for lo setup)
-                    # '--gid', '0',     # Map to root group inside namespace
-                    '--die-with-parent',
-                    '--new-session',
-                    # Execute binary
+                    '--proc', '/proc',
                     '--',
-                    '/work/main',
+                    binary_file,
                 ],
                 capture_output=True,
                 text=True,
-                timeout=RUN_TIMEOUT,
-                cwd='/',
-                env={},
-                shell=False,
+                timeout=5,
             )
 
             return {
                 'success': run_result.returncode == 0,
                 'stage': 'run',
-                'stdout': self._sanitize_output(run_result.stdout),
-                'stderr': self._sanitize_output(run_result.stderr),
+                'stdout': run_result.stdout,
+                'stderr': run_result.stderr,
                 'exit_code': run_result.returncode
             }
 
         except subprocess.TimeoutExpired:
-            return {
-                'success': False,
-                'stage': 'timeout',
-                'stdout': '',
-                'stderr': 'Execution timed out',
-                'exit_code': -1
-            }
-        except FileNotFoundError as e:
-            if 'bwrap' in str(e) or 'sudo' in str(e):
-                return {
-                    'success': False,
-                    'stage': 'error',
-                    'stdout': '',
-                    'stderr': 'Sandbox not available. Install: sudo apt install bubblewrap sudo',
-                    'exit_code': -1
-                }
-            return {
-                'success': False,
-                'stage': 'error',
-                'stdout': '',
-                'stderr': 'Execution failed',
-                'exit_code': -1
-            }
+            return {'success': False, 'stage': 'timeout', 'stdout': '', 'stderr': 'Timeout', 'exit_code': -1}
         except Exception as e:
-            import traceback
-            print(f"DEBUG Exception: {e}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
-            return {
-                'success': False,
-                'stage': 'error',
-                'stdout': '',
-                'stderr': f'Execution failed: {str(e)}',
-                'exit_code': -1
-            }
+            return {'success': False, 'stage': 'error', 'stdout': '', 'stderr': str(e), 'exit_code': -1}
         finally:
-            # Secure cleanup
-            try:
-                shutil.rmtree(work_dir, ignore_errors=True)
-                _temp_dirs.discard(work_dir)
-            except Exception:
-                pass
-
-    def _sanitize_output(self, output):
-        """Sanitize output to remove sensitive paths and limit size."""
-        if not output:
-            return ''
-        
-        # Truncate to max size
-        output = output[:MAX_OUTPUT_SIZE]
-        
-        # Remove absolute paths that might leak server info
-        output = output.replace(tempfile.gettempdir(), '/tmp')
-        
-        # Remove bubblewrap/sudo warnings
-        lines = output.split('\n')
-        filtered = []
-        for l in lines:
-            if any(l.startswith(p) for p in ['bwrap:', 'sudo:', 'Parent pid']):
-                continue
-            filtered.append(l)
-        
-        return '\n'.join(filtered)
-
-    def log_message(self, format, *args):
-        # Sanitize log output to prevent log injection
-        msg = str(args[0]).replace('\n', ' ').replace('\r', ' ')[:200]
-        print(f"[{self.log_date_time_string()}] {msg}")
-
-
-def check_dependencies():
-    """Check if required dependencies are installed."""
-    missing = []
-    
-    for cmd, pkg in [('/usr/bin/gcc', 'gcc'), ('/usr/bin/bwrap', 'bubblewrap'), ('/usr/bin/sudo', 'sudo')]:
-        if not os.path.exists(cmd) and not shutil.which(cmd):
-            missing.append(pkg)
-    
-    if missing:
-        print(f"ERROR: Missing dependencies: {', '.join(missing)}")
-        print(f"Install with: sudo apt install {' '.join(missing)}")
-        return False
-    
-    return True
-
-
-def run_server():
-    if not check_dependencies():
-        return
-    
-    # Bind only to localhost for security
-    server = HTTPServer(('127.0.0.1', PORT), CExecutorHandler)
-    print(f"C Executor server running on http://127.0.0.1:{PORT}")
-    print(f"Sandbox: bubblewrap (via sudo)")
-    print(f"Endpoints:")
-    print(f"  POST /execute - Execute C code")
-    print(f"  GET  /health  - Health check")
-    print(f"\nPress Ctrl+C to stop")
-    try:
-        server.serve_forever()
-    except (KeyboardInterrupt, SystemExit):
-        print("\nShutting down...")
-        server.shutdown()
-        cleanup_temp_dirs()
+            subprocess.run(['rm', '-rf', work_dir], capture_output=True)
 
 
 if __name__ == '__main__':
-    run_server()
+    server = HTTPServer(('127.0.0.1', PORT), CExecutorHandler)
+    print(f"Server running on http://127.0.0.1:{PORT}")
+    server.serve_forever()

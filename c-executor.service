@@ -1,25 +1,13 @@
 [Unit]
-Description=C Code Executor API (Bubblewrap Sandbox)
+Description=C Code Executor API
 After=network.target
 
 [Service]
 Type=simple
-User=c-executor
-Group=c-executor
+User=root
 WorkingDirectory=/var/www/c-executor
 ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
 Restart=always
-RestartSec=5
-
-# Hardening (all compatible with bwrap as unprivileged user)
-NoNewPrivileges=false
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/tmp /var/tmp
-
-MemoryMax=512M
-CPUQuota=50%
 
 [Install]
 WantedBy=multi-user.target
