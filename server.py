@@ -165,7 +165,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
     def execute_c_code(self, code):
         """Compile and execute C code in firejail sandbox."""
         # Use secure random suffix for temp directory
-        work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}')
+        # work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}')
+        work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}', dir='/var/tmp')
         _temp_dirs.add(work_dir)
         
         source_file = os.path.join(work_dir, 'main.c')
