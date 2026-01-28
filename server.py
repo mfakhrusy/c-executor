@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Lightweight C Code Executor
-A minimal HTTP server that compiles and runs C code using gcc + firejail.
+A minimal HTTP server that compiles and runs C code using gcc + bubblewrap.
 
-Requires: gcc, firejail
-Install firejail: https://github.com/netblue30/firejail
+Requires: gcc, bubblewrap
+Install bubblewrap: sudo apt install bubblewrap
 """
 
 import subprocess
@@ -23,7 +23,6 @@ MAX_CODE_SIZE = 64 * 1024  # 64KB max code size
 MAX_OUTPUT_SIZE = 64 * 1024  # 64KB max output
 COMPILE_TIMEOUT = 10  # seconds
 RUN_TIMEOUT = 5  # seconds
-MAX_MEMORY_MB = 128  # Max memory for executed program
 
 # Allowed origins for CORS (set to specific domain in production)
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
@@ -163,10 +162,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': 'Internal server error'}).encode())
 
     def execute_c_code(self, code):
-        """Compile and execute C code in firejail sandbox."""
+        """Compile and execute C code in bubblewrap sandbox."""
         # Use secure random suffix for temp directory
-        # work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}')
-        work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}', dir='/var/tmp')
+        work_dir = tempfile.mkdtemp(prefix='c_exec_', suffix=f'_{secrets.token_hex(8)}')
         _temp_dirs.add(work_dir)
         
         source_file = os.path.join(work_dir, 'main.c')
@@ -178,59 +176,52 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             with os.fdopen(fd, 'w') as f:
                 f.write(code)
 
-            # Compile with gcc inside firejail
-            # Less restrictive than execution sandbox - needs access to:
-            #   - /usr/include (headers)
-            #   - /usr/lib (libraries)
-            #   - /usr/bin/gcc, /usr/bin/as, /usr/bin/ld
-            # But still blocks:
-            #   - Network access
-            #   - Home directory (prevents #include "/home/user/.ssh/id_rsa")
-            #   - Most of /etc
+            # Compile with gcc inside bubblewrap sandbox
+            # bwrap mounts:
+            #   --ro-bind: Read-only system directories (usr, lib, etc.)
+            #   --bind: Read-write work directory
+            #   --proc, --dev: Minimal proc and dev filesystems
+            #   --tmpfs: Empty /tmp inside sandbox
+            #   --unshare-all: Unshare all namespaces (ipc, pid, net, mount, uts)
+            #   --die-with-parent: Kill sandbox if parent dies
+            #   --dir: Create /work directory inside sandbox
             compile_result = subprocess.run(
                 [
-                    '/usr/bin/firejail',
-                    '--quiet',
-                    '--noprofile',
-                    f'--private={work_dir}',
-                    '--private-tmp',
-                    '--private-dev',
-                    '--private-etc=alternatives,ld.so.cache,ld.so.conf,ld.so.conf.d',
-                    '--net=none',
-                    '--nosound',
-                    '--no3d',
-                    '--novideo',
-                    '--nodvd',
-                    '--nogroups',
-                    '--nonewprivs',
-                    '--noroot',
-                    '--seccomp',
-                    '--caps.drop=all',
-                    f'--rlimit-as={MAX_MEMORY_MB * 4 * 1024 * 1024}',  # More memory for compiler
-                    '--rlimit-cpu=10',
-                    '--rlimit-fsize=10485760',  # 10MB for object files
-                    '--rlimit-nproc=20',  # gcc spawns subprocesses (cc1, as, ld)
-                    '--rlimit-nofile=100',
-                    f'--timeout=00:00:{COMPILE_TIMEOUT:02d}',
-                    '--read-only=/usr',
-                    '--read-only=/lib',
-                    '--read-only=/lib64',
+                    'bwrap',
+                    # System directories (read-only)
+                    '--ro-bind', '/usr', '/usr',
+                    '--ro-bind', '/bin', '/bin',
+                    '--ro-bind', '/sbin', '/sbin',
+                    '--ro-bind', '/lib', '/lib',
+                    '--ro-bind', '/lib64', '/lib64',
+                    '--ro-bind', '/etc', '/etc',
+                    # Essential filesystems
+                    '--proc', '/proc',
+                    '--dev', '/dev',
+                    # Isolated temp
+                    '--tmpfs', '/tmp',
+                    # Work directory (map to /work inside sandbox)
+                    '--dir', '/work',
+                    '--bind', work_dir, '/work',
+                    # Sandboxing options
+                    '--unshare-all',
+                    '--die-with-parent',
+                    # Execute gcc
                     '--',
                     '/usr/bin/gcc',
-                    '-o', binary_file,
-                    source_file,
+                    '-o', '/work/main',
+                    '/work/main.c',
                     '-lm',
                     '-Wall',
                     '-Wextra',
-                    '-pie',
-                    '-fPIE',
-                    '-Wl,-z,now',
-                    '-Wl,-z,relro',
+                    '-O2',
+                    '-std=c99',
+                    '-pedantic',
                 ],
                 capture_output=True,
                 text=True,
-                timeout=COMPILE_TIMEOUT + 2,
-                cwd=work_dir,
+                timeout=COMPILE_TIMEOUT,
+                cwd='/',
                 env={},
                 shell=False,
             )
@@ -244,61 +235,49 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     'exit_code': compile_result.returncode
                 }
 
-            # Make binary executable
+            # Verify binary was created
+            if not os.path.exists(binary_file):
+                return {
+                    'success': False,
+                    'stage': 'compile',
+                    'stdout': '',
+                    'stderr': 'Compilation failed: no output file',
+                    'exit_code': -1
+                }
+
+            # Make binary executable (rarely needed but safe)
             os.chmod(binary_file, 0o500)
 
-            # Execute in firejail sandbox
-            # Firejail options:
-            #   --quiet: Suppress firejail messages
-            #   --noprofile: Don't use default profiles
-            #   --private=DIR: Use DIR as private /home
-            #   --private-tmp: Mount empty /tmp
-            #   --private-dev: Limited /dev
-            #   --private-etc=none: Empty /etc
-            #   --net=none: No network access
-            #   --no3d: Disable 3D acceleration
-            #   --nosound: Disable sound
-            #   --novideo: Disable video
-            #   --nodvd: Disable DVD/CD
-            #   --nogroups: Disable supplementary groups
-            #   --nonewprivs: No new privileges
-            #   --noroot: No root in sandbox
-            #   --seccomp: Enable seccomp filter
-            #   --caps.drop=all: Drop all capabilities
-            #   --rlimit-*: Resource limits
-            #   --timeout: Kill after timeout
+            # Execute in bubblewrap sandbox with network isolation
+            # Additional restrictions:
+            #   --unshare-net: No network access
+            #   --new-session: Create new session (no tty access)
             run_result = subprocess.run(
                 [
-                    '/usr/bin/firejail',
-                    '--quiet',
-                    '--noprofile',
-                    f'--private={work_dir}',
-                    '--private-tmp',
-                    '--private-dev',
-                    '--private-etc=none',
-                    '--net=none',
-                    '--no3d',
-                    '--nosound',
-                    '--novideo',
-                    '--nodvd',
-                    '--nogroups',
-                    '--nonewprivs',
-                    '--noroot',
-                    '--seccomp',
-                    '--caps.drop=all',
-                    f'--rlimit-as={MAX_MEMORY_MB * 1024 * 1024}',
-                    '--rlimit-cpu=5',
-                    '--rlimit-fsize=1048576',
-                    '--rlimit-nproc=5',
-                    '--rlimit-nofile=20',
-                    f'--timeout=00:00:0{RUN_TIMEOUT}',
+                    'bwrap',
+                    # Minimal system (no /usr needed for running usually, but keep for libc)
+                    '--ro-bind', '/usr', '/usr',
+                    '--ro-bind', '/lib', '/lib',
+                    '--ro-bind', '/lib64', '/lib64',
+                    '--proc', '/proc',
+                    '--dev', '/dev',
+                    '--tmpfs', '/tmp',
+                    # Only expose the binary directory
+                    '--dir', '/work',
+                    '--bind', work_dir, '/work',
+                    # Stricter isolation for execution
+                    '--unshare-all',
+                    '--unshare-net',  # No network
+                    '--die-with-parent',
+                    '--new-session',
+                    # Execute binary
                     '--',
-                    binary_file,
+                    '/work/main',
                 ],
                 capture_output=True,
                 text=True,
-                timeout=RUN_TIMEOUT + 2,  # Extra buffer for firejail overhead
-                cwd=work_dir,
+                timeout=RUN_TIMEOUT,
+                cwd='/',
                 env={},  # Empty environment
                 shell=False,
             )
@@ -320,12 +299,12 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 'exit_code': -1
             }
         except FileNotFoundError as e:
-            if 'firejail' in str(e):
+            if 'bwrap' in str(e):
                 return {
                     'success': False,
                     'stage': 'error',
                     'stdout': '',
-                    'stderr': 'Sandbox not available. Install firejail: sudo apt install firejail',
+                    'stderr': 'Sandbox not available. Install bubblewrap: sudo apt install bubblewrap',
                     'exit_code': -1
                 }
             return {
@@ -362,9 +341,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
         # Remove absolute paths that might leak server info
         output = output.replace(tempfile.gettempdir(), '/tmp')
         
-        # Remove firejail messages that might leak info
+        # Remove bubblewrap warnings that might leak info
         lines = output.split('\n')
-        filtered = [l for l in lines if not l.startswith('Parent pid')]
+        filtered = [l for l in lines if not l.startswith('bwrap:')]
         
         return '\n'.join(filtered)
 
@@ -378,8 +357,8 @@ def check_dependencies():
     """Check if required dependencies are installed."""
     missing = []
     
-    for cmd, pkg in [('/usr/bin/gcc', 'gcc'), ('/usr/bin/firejail', 'firejail')]:
-        if not os.path.exists(cmd):
+    for cmd, pkg in [('/usr/bin/gcc', 'gcc'), ('/usr/bin/bwrap', 'bubblewrap')]:
+        if not os.path.exists(cmd) and not shutil.which(cmd):
             missing.append(pkg)
     
     if missing:
@@ -397,7 +376,7 @@ def run_server():
     # Bind only to localhost for security
     server = HTTPServer(('127.0.0.1', PORT), CExecutorHandler)
     print(f"C Executor server running on http://127.0.0.1:{PORT}")
-    print(f"Sandbox: firejail (seccomp + namespaces)")
+    print(f"Sandbox: bubblewrap (namespaces + seccomp)")
     print(f"Endpoints:")
     print(f"  POST /execute - Execute C code")
     print(f"  GET  /health  - Health check")

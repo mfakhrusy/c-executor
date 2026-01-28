@@ -1,5 +1,5 @@
 [Unit]
-Description=C Code Executor API
+Description=C Code Executor API (Bubblewrap Sandbox)
 After=network.target
 
 [Service]
@@ -11,10 +11,18 @@ ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
 Restart=always
 RestartSec=5
 
-# Absolutely minimal - no hardening that interferes with firejail
-NoNewPrivileges=false
+# Environment (restrict CORS in production)
+# Environment=ALLOWED_ORIGINS=https://blog.your.domain,https://c-playground.your.domain 
 
-# Resource limits only (safe)
+# Security hardening (all compatible with bubblewrap since it uses user namespaces, not setuid)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Allow writing to /tmp for temp files (mapped inside sandbox)
+ReadWritePaths=/tmp /var/tmp
+
+# Resource limits for the server itself
 MemoryMax=512M
 CPUQuota=50%
 

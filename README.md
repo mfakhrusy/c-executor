@@ -1,3 +1,4 @@
+# TODO: outdated, using bubblewrap now
 # Lightweight C Code Executor
 
 A sandboxed C code execution API using Python + gcc + firejail.

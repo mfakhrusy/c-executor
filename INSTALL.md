@@ -1,3 +1,4 @@
+# TODO: outdated, using bubblewrap now
 # C Executor Installation Guide
 
 A sandboxed C code execution API using Python + gcc + firejail.
