@@ -21,9 +21,21 @@ add-apt-repository -y ppa:deki/firejail
 apt-get update
 apt-get install -y firejail firejail-profiles
 
-# Step 3: Verify firejail
-echo "[3/7] Verifying firejail installation..."
+# Step 3: Configure firejail
+echo "[3/7] Configuring firejail..."
 firejail --version
+
+# Allow www-data user to use firejail
+if [ -f /etc/firejail/firejail.users ]; then
+    if ! grep -q "^www-data$" /etc/firejail/firejail.users; then
+        echo "www-data" >> /etc/firejail/firejail.users
+        echo "Added www-data to firejail.users"
+    fi
+else
+    # If file doesn't exist, create it with www-data
+    echo "www-data" > /etc/firejail/firejail.users
+    echo "Created firejail.users with www-data"
+fi
 
 # Step 4: Copy project files
 echo "[4/7] Copying project files..."
