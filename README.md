@@ -2,7 +2,7 @@
 
 A sandboxed C code execution service using Python + GCC + bubblewrap. Designed to be embedded as an iframe in blogs.
 
-**Live demo:** [c-executor.fahru.me](https://c-executor.fahru.me)
+**Live demo:** [c-playground.fahru.me](https://c-playground.fahru.me)
 
 <img width="1595" height="648" alt="image" src="https://github.com/user-attachments/assets/5b6e0c4e-42d3-46e2-b813-576715dc59eb" />
 
