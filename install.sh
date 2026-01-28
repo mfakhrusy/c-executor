@@ -80,19 +80,19 @@ if [ -f /var/www/c-executor/c-executor.service ]; then
     fi
     
     # If ProtectSystem=strict is used, ensure /run/firejail is writable
-    if grep -qE "ProtectSystem\s*=\s*strict" "$SERVICE_FILE"; then
-        if grep -qE "ReadWritePaths\s*=" "$SERVICE_FILE"; then
-            # Add /run/firejail to existing ReadWritePaths if not present
-            if ! grep -qE "ReadWritePaths.*/run/firejail" "$SERVICE_FILE"; then
-                sed -i 's|ReadWritePaths\s*=\s*\(.*\)|ReadWritePaths=\1 /run/firejail|' "$SERVICE_FILE"
-                echo "Added /run/firejail to ReadWritePaths"
-            fi
-        else
-            # Add ReadWritePaths line after ProtectSystem
-            sed -i '/ProtectSystem.*strict/a ReadWritePaths=/tmp /run/firejail' "$SERVICE_FILE"
-            echo "Added ReadWritePaths for firejail runtime"
-        fi
-    fi
+    # if grep -qE "ProtectSystem\s*=\s*strict" "$SERVICE_FILE"; then
+    #     if grep -qE "ReadWritePaths\s*=" "$SERVICE_FILE"; then
+    #         # Add /run/firejail to existing ReadWritePaths if not present
+    #         if ! grep -qE "ReadWritePaths.*/run/firejail" "$SERVICE_FILE"; then
+    #             sed -i 's|ReadWritePaths\s*=\s*\(.*\)|ReadWritePaths=\1 /run/firejail|' "$SERVICE_FILE"
+    #             echo "Added /run/firejail to ReadWritePaths"
+    #         fi
+    #     else
+    #         # Add ReadWritePaths line after ProtectSystem
+    #         sed -i '/ProtectSystem.*strict/a ReadWritePaths=/tmp /run/firejail' "$SERVICE_FILE"
+    #         echo "Added ReadWritePaths for firejail runtime"
+    #     fi
+    # fi
     
     systemctl daemon-reload
     systemctl enable c-executor

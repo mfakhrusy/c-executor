@@ -17,8 +17,8 @@ RestartSec=5
 # Security hardening
 # Note: NoNewPrivileges must be OFF for firejail setuid to work
 NoNewPrivileges=false
-ProtectSystem=strict
-ProtectHome=true
+# ProtectSystem=strict
+# ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/tmp /run/firejail
 
