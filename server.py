@@ -199,6 +199,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--bind', work_dir, '/work',
                     # Sandboxing - don't unshare user since we use sudo
                     '--unshare-all',
+                    '--uid', '0',     # Map to root inside namespace (needed for lo setup)
+                    '--gid', '0',     # Map to root group inside namespace
                     '--die-with-parent',
                     # Execute gcc
                     '--',
@@ -264,6 +266,8 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--bind', work_dir, '/work',
                     # Stricter isolation for execution
                     '--unshare-all',
+                    '--uid', '0',     # Map to root inside namespace (needed for lo setup)
+                    '--gid', '0',     # Map to root group inside namespace
                     '--die-with-parent',
                     '--new-session',
                     # Execute binary
