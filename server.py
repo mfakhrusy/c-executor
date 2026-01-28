@@ -173,7 +173,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
 
         try:
             # Write source code with restricted permissions
-            fd = os.open(source_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(source_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
             with os.fdopen(fd, 'w') as f:
                 f.write(code)
 
@@ -181,7 +181,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             # We use sudo because user namespaces are disabled by AppArmor
             compile_result = subprocess.run(
                 [
-                    'sudo', '-n', '/usr/bin/bwrap',
+                    'bwrap',
                     # System directories (read-only)
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
@@ -198,7 +198,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
                     # Sandboxing - don't unshare user since we use sudo
-                    '--unshare-ipc', '--unshare-pid', '--unshare-uts',
+                    '--unshare-all',
                     '--die-with-parent',
                     # Execute gcc
                     '--',
@@ -221,14 +221,17 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             )
 
             if compile_result.returncode != 0:
+                # Debug: log the raw output
+                print(f"DEBUG: gcc failed with code {compile_result.returncode}")
+                print(f"DEBUG: stdout={repr(compile_result.stdout)}")
+                print(f"DEBUG: stderr={repr(compile_result.stderr)}")
                 return {
                     'success': False,
                     'stage': 'compile',
-                    'stdout': compile_result.stdout,
-                    'stderr': self._sanitize_output(compile_result.stderr),
+                    'stdout': compile_result.stdout or '',
+                    'stderr': compile_result.stderr or f'gcc failed silently with code {compile_result.returncode}',
                     'exit_code': compile_result.returncode
                 }
-
             # Verify binary was created (gcc via sudo creates it as root)
             if not os.path.exists(binary_file):
                 return {
@@ -248,7 +251,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             # Execute in bubblewrap sandbox with network isolation
             run_result = subprocess.run(
                 [
-                    'sudo', '-n', '/usr/bin/bwrap',
+                    'bwrap',
                     # Minimal system for running
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/lib', '/lib',
@@ -260,7 +263,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
                     # Stricter isolation for execution
-                    '--unshare-ipc', '--unshare-pid', '--unshare-uts', '--unshare-net',
+                    '--unshare-all',
                     '--die-with-parent',
                     '--new-session',
                     # Execute binary

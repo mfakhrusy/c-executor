@@ -11,18 +11,13 @@ ExecStart=/usr/bin/python3 /var/www/c-executor/server.py
 Restart=always
 RestartSec=5
 
-# Environment (restrict CORS in production)
-# Environment=ALLOWED_ORIGINS=https://blog.your.domain,https://c-playground.your.domain 
-
-# Security hardening (all compatible with bubblewrap since it uses user namespaces, not setuid)
-NoNewPrivileges=true
+# Hardening (all compatible with bwrap as unprivileged user)
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-# Allow writing to /tmp for temp files (mapped inside sandbox)
 ReadWritePaths=/tmp /var/tmp
 
-# Resource limits for the server itself
 MemoryMax=512M
 CPUQuota=50%
 
