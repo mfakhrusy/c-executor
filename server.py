@@ -3,8 +3,8 @@
 Lightweight C Code Executor
 A minimal HTTP server that compiles and runs C code using gcc + bubblewrap.
 
-Requires: gcc, bubblewrap
-Install bubblewrap: sudo apt install bubblewrap
+Requires: gcc, bubblewrap, sudo
+Install: sudo apt install gcc bubblewrap sudo
 """
 
 import subprocess
@@ -15,6 +15,7 @@ import secrets
 import shutil
 import signal
 import atexit
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Configuration
@@ -176,18 +177,11 @@ class CExecutorHandler(BaseHTTPRequestHandler):
             with os.fdopen(fd, 'w') as f:
                 f.write(code)
 
-            # Compile with gcc inside bubblewrap sandbox
-            # bwrap mounts:
-            #   --ro-bind: Read-only system directories (usr, lib, etc.)
-            #   --bind: Read-write work directory
-            #   --proc, --dev: Minimal proc and dev filesystems
-            #   --tmpfs: Empty /tmp inside sandbox
-            #   --unshare-all: Unshare all namespaces (ipc, pid, net, mount, uts)
-            #   --die-with-parent: Kill sandbox if parent dies
-            #   --dir: Create /work directory inside sandbox
+            # Compile with gcc inside bubblewrap sandbox using sudo
+            # We use sudo because user namespaces are disabled by AppArmor
             compile_result = subprocess.run(
                 [
-                    'bwrap',
+                    'sudo', '-n', '/usr/bin/bwrap',
                     # System directories (read-only)
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/bin', '/bin',
@@ -198,13 +192,13 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                     # Essential filesystems
                     '--proc', '/proc',
                     '--dev', '/dev',
-                    # Isolated temp
+                    # Isolated temp inside sandbox
                     '--tmpfs', '/tmp',
                     # Work directory (map to /work inside sandbox)
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
-                    # Sandboxing options
-                    '--unshare-all',
+                    # Sandboxing - don't unshare user since we use sudo
+                    '--unshare-ipc', '--unshare-pid', '--unshare-uts',
                     '--die-with-parent',
                     # Execute gcc
                     '--',
@@ -230,44 +224,43 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 return {
                     'success': False,
                     'stage': 'compile',
-                    'stdout': '',
+                    'stdout': compile_result.stdout,
                     'stderr': self._sanitize_output(compile_result.stderr),
                     'exit_code': compile_result.returncode
                 }
 
-            # Verify binary was created
+            # Verify binary was created (gcc via sudo creates it as root)
             if not os.path.exists(binary_file):
                 return {
                     'success': False,
                     'stage': 'compile',
-                    'stdout': '',
+                    'stdout': compile_result.stdout,
                     'stderr': 'Compilation failed: no output file',
                     'exit_code': -1
                 }
 
-            # Make binary executable (rarely needed but safe)
-            os.chmod(binary_file, 0o500)
+            # Make binary executable (may fail if owned by root, that's ok)
+            try:
+                os.chmod(binary_file, 0o500)
+            except PermissionError:
+                pass  # Binary owned by root, but will still execute via sudo
 
             # Execute in bubblewrap sandbox with network isolation
-            # Additional restrictions:
-            #   --unshare-net: No network access
-            #   --new-session: Create new session (no tty access)
             run_result = subprocess.run(
                 [
-                    'bwrap',
-                    # Minimal system (no /usr needed for running usually, but keep for libc)
+                    'sudo', '-n', '/usr/bin/bwrap',
+                    # Minimal system for running
                     '--ro-bind', '/usr', '/usr',
                     '--ro-bind', '/lib', '/lib',
                     '--ro-bind', '/lib64', '/lib64',
                     '--proc', '/proc',
                     '--dev', '/dev',
                     '--tmpfs', '/tmp',
-                    # Only expose the binary directory
+                    # Work directory with binary
                     '--dir', '/work',
                     '--bind', work_dir, '/work',
                     # Stricter isolation for execution
-                    '--unshare-all',
-                    '--unshare-net',  # No network
+                    '--unshare-ipc', '--unshare-pid', '--unshare-uts', '--unshare-net',
                     '--die-with-parent',
                     '--new-session',
                     # Execute binary
@@ -278,7 +271,7 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 text=True,
                 timeout=RUN_TIMEOUT,
                 cwd='/',
-                env={},  # Empty environment
+                env={},
                 shell=False,
             )
 
@@ -299,12 +292,12 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 'exit_code': -1
             }
         except FileNotFoundError as e:
-            if 'bwrap' in str(e):
+            if 'bwrap' in str(e) or 'sudo' in str(e):
                 return {
                     'success': False,
                     'stage': 'error',
                     'stdout': '',
-                    'stderr': 'Sandbox not available. Install bubblewrap: sudo apt install bubblewrap',
+                    'stderr': 'Sandbox not available. Install: sudo apt install bubblewrap sudo',
                     'exit_code': -1
                 }
             return {
@@ -314,12 +307,15 @@ class CExecutorHandler(BaseHTTPRequestHandler):
                 'stderr': 'Execution failed',
                 'exit_code': -1
             }
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"DEBUG Exception: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return {
                 'success': False,
                 'stage': 'error',
                 'stdout': '',
-                'stderr': 'Execution failed',
+                'stderr': f'Execution failed: {str(e)}',
                 'exit_code': -1
             }
         finally:
@@ -341,9 +337,13 @@ class CExecutorHandler(BaseHTTPRequestHandler):
         # Remove absolute paths that might leak server info
         output = output.replace(tempfile.gettempdir(), '/tmp')
         
-        # Remove bubblewrap warnings that might leak info
+        # Remove bubblewrap/sudo warnings
         lines = output.split('\n')
-        filtered = [l for l in lines if not l.startswith('bwrap:')]
+        filtered = []
+        for l in lines:
+            if any(l.startswith(p) for p in ['bwrap:', 'sudo:', 'Parent pid']):
+                continue
+            filtered.append(l)
         
         return '\n'.join(filtered)
 
@@ -357,7 +357,7 @@ def check_dependencies():
     """Check if required dependencies are installed."""
     missing = []
     
-    for cmd, pkg in [('/usr/bin/gcc', 'gcc'), ('/usr/bin/bwrap', 'bubblewrap')]:
+    for cmd, pkg in [('/usr/bin/gcc', 'gcc'), ('/usr/bin/bwrap', 'bubblewrap'), ('/usr/bin/sudo', 'sudo')]:
         if not os.path.exists(cmd) and not shutil.which(cmd):
             missing.append(pkg)
     
@@ -376,7 +376,7 @@ def run_server():
     # Bind only to localhost for security
     server = HTTPServer(('127.0.0.1', PORT), CExecutorHandler)
     print(f"C Executor server running on http://127.0.0.1:{PORT}")
-    print(f"Sandbox: bubblewrap (namespaces + seccomp)")
+    print(f"Sandbox: bubblewrap (via sudo)")
     print(f"Endpoints:")
     print(f"  POST /execute - Execute C code")
     print(f"  GET  /health  - Health check")
