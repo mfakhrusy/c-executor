@@ -94,7 +94,7 @@ Execute C code.
 
 ```html
 <iframe 
-  src="https://c-executor.fahru.me" 
+  src="https://c-playground.fahru.me" 
   width="100%" 
   height="600" 
   frameborder="0"
