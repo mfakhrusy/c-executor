@@ -4,7 +4,7 @@ A sandboxed C code execution service using Python + GCC + bubblewrap. Designed t
 
 **Live demo:** [c-executor.fahru.me](https://c-executor.fahru.me)
 
-<img width="893" height="670" alt="image" src="https://github.com/user-attachments/assets/7d57c8d1-90b0-46fe-94d8-8fe1962f04e8" />
+<img width="1595" height="648" alt="image" src="https://github.com/user-attachments/assets/5b6e0c4e-42d3-46e2-b813-576715dc59eb" />
 
 ## Features
 
