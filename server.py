@@ -19,7 +19,9 @@ class CExecutorHandler(BaseHTTPRequestHandler):
     def _set_headers(self, status=200, content_type='application/json'):
         self.send_response(status)
         self.send_header('Content-Type', content_type)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        # self.send_header('Access-Control-Allow-Origin', '*')
+        origin = self.headers.get("Origin")
+        self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.send_header('X-Content-Type-Options', 'nosniff')
